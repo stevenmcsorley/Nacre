@@ -429,6 +429,8 @@ An original splice-based stereo loop sampler in the lineage of tape-style
 micro-sound samplers (Morphagene and friends), built around a granular
 engine that fully decouples time from pitch.
 
+![Chimera](chimera.png)
+
 - **Reel**: record from the inputs (first recording sets the reel, up to
   60 s; REC again later overdubs at the playhead with the **SOS** knob
   setting how much of the old layer survives), or load a WAV via the

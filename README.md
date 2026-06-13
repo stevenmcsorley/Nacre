@@ -157,6 +157,8 @@ An original implementation of the Shakmat Dual Dagger architecture: a stereo
 filter with, per channel, a 24 dB/oct high-pass into a 24 dB/oct low-pass
 (four ZDF ladder filters total).
 
+![Stiletto](stiletto.png)
+
 - **LPF / HPF** — cutoff knobs (20 Hz–20 kHz) shared by both channels, with
   1 V/oct CV inputs.
 - **RES** — one resonance control (plus CV), routed to the low-pass pair

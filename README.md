@@ -704,12 +704,17 @@ or endorsed by Happy Nerding.
 ## Building
 
 This is a standard VCV Rack 2 plugin and builds with the official Rack
-plugin toolchain on Linux, macOS, and Windows. Every push is built for all
-four targets (Linux x64, macOS Intel, macOS Apple Silicon, Windows x64) by
+plugin toolchain on Linux, macOS, and Windows. Every push is built for
+**Linux x64, macOS Apple Silicon, and Windows x64** by
 [GitHub Actions](.github/workflows/build.yml), and tagged releases get a
 `.vcvplugin` attached for each. If a prebuilt download for your platform
-isn't on the [latest release](https://github.com/stevenmcsorley/Nacre/releases)
-yet, build from source with the steps below.
+isn't on the [latest release](https://github.com/stevenmcsorley/Nacre/releases),
+build from source with the steps below.
+
+> **Intel Mac (mac-x64):** no prebuilt binary is published (GitHub's free
+> Intel-Mac runners queue for too long to be reliable). Build from source
+> with the steps below, or grab the all-platform builds from the
+> [VCV Library](https://vcvrack.com/manual/Plugin#Distributing).
 
 ### 1. Get the Rack SDK
 

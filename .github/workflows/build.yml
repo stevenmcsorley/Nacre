@@ -16,6 +16,10 @@ on:
 env:
   RACK_SDK_VERSION: 2.6.6
 
+# Allow the build job to create/update the GitHub Release on tag pushes.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: ${{ matrix.name }}

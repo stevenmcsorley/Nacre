@@ -376,6 +376,8 @@ A CV/gate phrase looper. Patch it between a controller (e.g. Rack's
 MIDI-CV) and a voice: it passes its four lanes (V/OCT, GATE, CV 1, CV 2)
 straight through until you record.
 
+![Lariat](lariat.png)
+
 - **REC** (button or gate) starts capturing all four lanes (sampled at
   4 kHz, up to 4 minutes); press again to stop — the phrase immediately
   starts looping out of the OUT jacks while the inputs go quiet.

@@ -588,6 +588,8 @@ with or endorsed by Mutable Instruments.
 A pocket-studio voice inspired by the Teenage Engineering **OP-1 Field**,
 in Eurorack form. Original implementation.
 
+![Fieldfare](fieldfare.png)
+
 - **Four color macro knobs** that reassign across four pages (SOUND / ENV /
   FX / MIX), remembering their settings per page.
 - **Seven synth engines** (FM duo, saws, pulse, wavetable, Karplus-Strong
@@ -635,6 +637,8 @@ A triple-personality stereo oscillator inspired by the BlaknBlu **Oscar
 Tria**. Original implementation. A MODE switch selects three engines, with
 a second page (PG switch) of controls per mode:
 
+![Osprey](osprey.png)
+
 - **Green** — a traditional stereo pair with octave-down and two-octave-down
   square subs, through-zero linear FM, hard sync, a wave folder, and up to
   ±1 octave of detune for that beating two-oscillator sound.
@@ -655,6 +659,8 @@ or endorsed by BlaknBlu.
 
 A stereo multimode virtual-analog filter inspired by the BlaknBlu **Foxtrot
 Duo**. Original implementation.
+
+![Foxglove](foxglove.png)
 
 - **Three filter models** on a switch: **LD** a Moog-style 4-pole ladder,
   **SK** a Korg 35 Sallen-Key (the screamer), **SV** a clean Oberheim

@@ -538,6 +538,8 @@ not affiliated with or endorsed by them.
 
 An original polyphonic quantizer built for performance:
 
+![Fretwork](fretwork.png)
+
 - **Fully polyphonic** (16 channels) 1V/oct in → quantized out.
 - **14 scale presets** (chromatic, the church modes, harmonic/melodic
   minor, pentatonics, blues, whole tone) on the SCALE knob with **1 V per
@@ -560,6 +562,8 @@ A polyphonic macro oscillator: up to **16 simultaneous voices of Plaits**,
 Émilie Gillet's MIT-licensed macro-oscillator firmware, vendored verbatim
 under `eurorack/plaits/` with its license intact. The Rack integration and
 polyphony wrapper are original.
+
+![Murmur](murmur.png)
 
 - **V/OCT and TRIG accept polyphonic cables** — each channel is an
   independent full Plaits voice (Rack's MIDI-CV in poly mode plays it like

@@ -1,0 +1,12 @@
+# Build artifacts
+/build/
+/dist/
+*.o
+*.d
+plugin.so
+plugin.dll
+plugin.dylib
+
+# Editor / OS cruft
+*.swp
+.DS_Store

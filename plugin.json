@@ -1,0 +1,222 @@
+{
+  "slug": "Nacre",
+  "name": "Nacre",
+  "version": "2.0.0",
+  "license": "GPL-3.0-or-later",
+  "brand": "Nacre",
+  "author": "smcsorl",
+  "authorEmail": "smcsorl@googlemail.com",
+  "pluginUrl": "https://github.com/stevenmcsorley/Nacre",
+  "manualUrl": "https://github.com/stevenmcsorley/Nacre#readme",
+  "sourceUrl": "https://github.com/stevenmcsorley/Nacre",
+  "modules": [
+    {
+      "slug": "Nacre",
+      "name": "Nacre",
+      "description": "Granular audio processor inspired by Mutable Instruments Beads",
+      "tags": [
+        "Granular",
+        "Effect",
+        "Reverb",
+        "Delay"
+      ]
+    },
+    {
+      "slug": "Abacus",
+      "name": "Orrery",
+      "description": "Orrery: dual function generator (Maths-inspired slopes, cycling, sum/or bus)",
+      "tags": [
+        "Function generator",
+        "Envelope generator",
+        "LFO",
+        "Slew limiter",
+        "Mixer",
+        "Dual"
+      ]
+    },
+    {
+      "slug": "Stiletto",
+      "name": "Stiletto",
+      "description": "Stereo dual high-pass/low-pass filter inspired by Shakmat Dual Dagger",
+      "tags": [
+        "Filter",
+        "Dual",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Ammonite",
+      "name": "Ammonite",
+      "description": "Clocked multi-line stereo delay network inspired by Qu-Bit Nautilus",
+      "tags": [
+        "Delay",
+        "Effect",
+        "Envelope follower"
+      ]
+    },
+    {
+      "slug": "Bitrot",
+      "name": "Bitrot",
+      "description": "Circuit-bent stereo buffer corrupter inspired by Qu-Bit Data Bender",
+      "tags": [
+        "Effect",
+        "Distortion",
+        "Sampler"
+      ]
+    },
+    {
+      "slug": "Sirocco",
+      "name": "Sirocco",
+      "description": "Live granular processor with melodic and rhythmic grain controls, inspired by Qu-Bit Mojave",
+      "tags": [
+        "Granular",
+        "Effect",
+        "Reverb"
+      ]
+    },
+    {
+      "slug": "Espalier",
+      "name": "Espalier",
+      "description": "Three-channel generative fractal sequencer inspired by Qu-Bit Bloom v2",
+      "tags": [
+        "Sequencer",
+        "Random",
+        "Quantizer"
+      ]
+    },
+    {
+      "slug": "Tektite",
+      "name": "Tektite",
+      "description": "Stereo varispeed performance looper inspired by Qu-Bit Stardust",
+      "tags": [
+        "Looper",
+        "Sampler",
+        "Effect",
+        "Tape"
+      ]
+    },
+    {
+      "slug": "Haymaker",
+      "name": "Haymaker",
+      "description": "12-pad sampler groovebox with step sequencer and punch-in FX, inspired by compact pad samplers",
+      "tags": [
+        "Sampler",
+        "Sequencer",
+        "Drum",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Lariat",
+      "name": "Lariat",
+      "description": "CV/gate phrase looper: records V/oct, gate, and two CV lanes as you play, then loops them",
+      "tags": [
+        "Recorder",
+        "Utility",
+        "Sequencer"
+      ]
+    },
+    {
+      "slug": "Maelstrom",
+      "name": "Maelstrom",
+      "description": "Voltage-controlled pitch-shifting echo inspired by Make Noise Echophon",
+      "tags": [
+        "Delay",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Chimera",
+      "name": "Chimera",
+      "description": "Splice-based loop sampler with granular time-stretch, clock sync, scatter, EQ, and sound-on-sound",
+      "tags": [
+        "Sampler",
+        "Granular",
+        "Looper",
+        "Equalizer",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Catgut",
+      "name": "Catgut",
+      "description": "Dual-voice 32-string polyphonic Karplus-Strong synthesizer inspired by Strymon SuperKar+",
+      "tags": [
+        "Physical modeling",
+        "Polyphonic",
+        "Oscillator",
+        "Synth voice"
+      ]
+    },
+    {
+      "slug": "Capo",
+      "name": "Capo",
+      "description": "Four-voice polyphonic chord oscillator with wavetable banks and auto-harmonization, inspired by Qu-Bit Chord v2",
+      "tags": [
+        "Oscillator",
+        "Polyphonic",
+        "Chord"
+      ]
+    },
+    {
+      "slug": "Fretwork",
+      "name": "Fretwork",
+      "description": "Polyphonic performance quantizer with scale presets, diatonic transpose CV, and note-change gates",
+      "tags": [
+        "Quantizer",
+        "Polyphonic",
+        "Utility"
+      ]
+    },
+    {
+      "slug": "Murmur",
+      "name": "Murmur",
+      "description": "Polyphonic macro oscillator: 16 voices of the open-source Plaits DSP by Emilie Gillet",
+      "tags": [
+        "Oscillator",
+        "Polyphonic",
+        "Physical modeling",
+        "Drum"
+      ]
+    },
+    {
+      "slug": "Fieldfare",
+      "name": "Fieldfare",
+      "description": "Pocket-studio workstation: synth engines, 4-track varispeed tape, endless sequencer (OP-1 field inspired)",
+      "tags": [
+        "Synthesizer",
+        "Sampler",
+        "Sequencer",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Osprey",
+      "name": "Osprey",
+      "description": "Triple-mode stereo oscillator: traditional pair, 24-osc swarm, 20-chord engine",
+      "tags": [
+        "Oscillator",
+        "Polyphonic"
+      ]
+    },
+    {
+      "slug": "Foxglove",
+      "name": "Foxglove",
+      "description": "Stereo multimode VA filter: ladder, Sallen-Key, state variable with BP-LP-HP morph",
+      "tags": [
+        "Filter",
+        "Effect"
+      ]
+    },
+    {
+      "slug": "Remora",
+      "name": "Remora",
+      "description": "32-program stereo multi-FX: delays, shifters, filters, lo-fi, reverbs",
+      "tags": [
+        "Effect",
+        "Delay",
+        "Reverb"
+      ]
+    }
+  ]
+}

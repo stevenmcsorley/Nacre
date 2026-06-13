@@ -469,6 +469,8 @@ An original implementation of a dual-bank polyphonic Karplus-Strong string
 synthesizer in the style of the Strymon SuperKar+: a **Solo voice** and a
 **Chord voice**, each with sixteen physically-modeled strings (32 total).
 
+![Catgut](catgut.png)
+
 - Per voice: **DAMP** (in-loop high-frequency damping, ringing → muted),
   **DECAY** (sustain from percussive to effectively infinite), **ATTACK**
   (sharp strike → soft bow), each with a CV input, plus a **TIMBRE**
@@ -504,6 +506,8 @@ LLC; this project is not affiliated with or endorsed by them.
 An original implementation of a four-voice chord oscillator in the style
 of the Qu-Bit Chord v2: root, third, fifth, and seventh oscillators with
 individual outputs plus a mix.
+
+![Capo](capo.png)
 
 - **BANK + WAVE**: eight wavetable banks, all procedurally synthesized at
   startup (classic shapes, filtered saw, two-operator FM, waveshaped,

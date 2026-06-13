@@ -16,10 +16,10 @@ YC = 56.5          # WANDER, LOCK btn, RATE, FREEZE btn, SPIN
 YC_BTN_LABEL = 62.5
 YC_SMALL_LABEL = 67.6
 YC_LABEL = 68.6
-YD = 75.0          # MIX, POS, PITCH, SHAPE trimpots
-YD_LABEL = 80.8
+YD = 72.5          # MIX, POS, PITCH, SHAPE trimpots
+YD_LABEL = 77.6
 
-R1, R2, R3, R4 = 90.0, 100.5, 111.0, 121.5
+R1, R2, R3, R4 = 90.5, 100.8, 111.1, 121.4
 
 TITLE = (W / 2, 6.5)
 
@@ -129,8 +129,8 @@ JACKS = [
     (C[0], R4, "IN L", 0),   (C[1], R4, "IN R", 0),  (C[2], R4, "CV", 1),    (C[3], R4, "OUT L", 1), (C[4], R4, "OUT R", 1),
 ]
 for x, y, label, is_out in JACKS:
-    svg.append(ring(x, y, 4.4, ACCENT if is_out else RING))
-    svg.append(text_paths(x, y - 6.4, label, 1.6, FG if is_out else DIM))
+    svg.append(ring(x, y, 4.0, ACCENT if is_out else RING))
+    svg.append(text_paths(x, y - 5.9, label, 1.4, FG if is_out else DIM))
 
 svg.append('</svg>')
 

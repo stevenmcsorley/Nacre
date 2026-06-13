@@ -612,6 +612,8 @@ A dual function generator inspired by Make Noise **Maths**. Original
 implementation. (The module's slug is `Abacus` for patch compatibility; it
 displays as Orrery.)
 
+![Orrery](orrery.png)
+
 - **Two function generators** (channels 1 & 4) with rise, fall, and a
   continuously variable response from logarithmic through linear to
   exponential and hyper-exponential. Cycle for an LFO; trigger for an

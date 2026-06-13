@@ -399,6 +399,8 @@ the style of the Make Noise/soundhack Echophon: a mono delay line feeding
 a granular pitch shifter, with two feedback paths crossfaded on a single
 bipolar knob.
 
+![Maelstrom](maelstrom.png)
+
 - **ECHO** — delay time, 7 ms–1.7 s (exponential), with CV + attenuator.
   Time changes are slewed tape-style, so sweeps re-pitch musically. With a
   clock at **TEMPO**, the knob becomes a div/mult (÷8…×8) of the clock;

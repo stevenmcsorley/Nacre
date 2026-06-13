@@ -344,6 +344,8 @@ is not affiliated with or endorsed by them.
 An original 12-pad sampler/composer groovebox in the spirit of compact pad
 samplers such as Teenage Engineering's EP-133 K.O. II.
 
+![Haymaker](haymaker.png)
+
 - **12 pads**, each with its own sample slot. A procedurally synthesized
   drum kit (kick, snare, clap, rim, hats, toms, cowbell, shaker, zap) is
   built in, so it makes sound out of the box. Load your own WAVs (16/24-bit

@@ -681,6 +681,8 @@ or endorsed by BlaknBlu.
 A 32-program stereo multi-effect inspired by the Happy Nerding **FX AID**,
 loaded with its factory default program bank. Original DSP.
 
+![Remora](remora.png)
+
 - **All 32 default programs** in factory order with the same Control 1/2/3
   assignments: twelve delays (tape, ping-pong, resonant filter loops, freq/
   pitch-shift loops, clock-synced, comb, magneto, into-reverb, into-shimmer,

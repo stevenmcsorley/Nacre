@@ -263,6 +263,8 @@ sequencer in the style of the Qu-Bit Bloom v2. Each channel holds a 64-step
 trunk sequence (note, gate on/off + length, slew, ratchet, mod per step)
 with note, gate, and mod outputs.
 
+![Espalier](espalier.png)
+
 - **GROW** — adds up to 7 generative branches that play after the trunk;
   each branch transforms the previous one (reverse, inverse, octave
   transpose, seeded mutation, or randomization), giving up to 512-step

@@ -152,6 +152,8 @@ An original implementation of a clocked multi-line delay network in the
 style of the Qu-Bit Nautilus: 8 delay lines (4 per channel), all synced to
 an internal or external clock.
 
+![Ammonite](ammonite.png)
+
 - **TAP button / CLOCK input** — tap tempo (default 120 BPM) or external
   clock; range 0.25 Hz–1 kHz.
 - **DIV** — 16 clock divisions/multiplications from 2 bars to a 512th note.

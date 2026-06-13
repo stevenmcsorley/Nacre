@@ -1,5 +1,7 @@
 # Nacre
 
+[![Build](https://github.com/stevenmcsorley/Nacre/actions/workflows/build.yml/badge.svg)](https://github.com/stevenmcsorley/Nacre/actions/workflows/build.yml)
+
 A small collection of VCV Rack 2 modules:
 
 - **Nacre** — granular audio processor inspired by Mutable Instruments Beads
@@ -702,10 +704,12 @@ or endorsed by Happy Nerding.
 ## Building
 
 This is a standard VCV Rack 2 plugin and builds with the official Rack
-plugin toolchain on Linux, macOS, and Windows. The prebuilt `.vcvplugin`
-attached to the [latest release](https://github.com/stevenmcsorley/Nacre/releases)
-is **Linux x64 only** — on macOS or Windows, build from source with the
-steps below.
+plugin toolchain on Linux, macOS, and Windows. Every push is built for all
+four targets (Linux x64, macOS Intel, macOS Apple Silicon, Windows x64) by
+[GitHub Actions](.github/workflows/build.yml), and tagged releases get a
+`.vcvplugin` attached for each. If a prebuilt download for your platform
+isn't on the [latest release](https://github.com/stevenmcsorley/Nacre/releases)
+yet, build from source with the steps below.
 
 ### 1. Get the Rack SDK
 

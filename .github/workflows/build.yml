@@ -1,0 +1,114 @@
+name: Build
+
+# Builds the Nacre plugin for Linux, macOS (Intel + Apple Silicon), and
+# Windows against the matching Rack SDK. Runs on every push/PR, and when a
+# version tag (v*) is pushed it also attaches the built .vcvplugin files to
+# the GitHub Release.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RACK_SDK_VERSION: 2.6.6
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            arch: lin-x64
+          - name: macOS x64
+            os: macos-13          # Intel runner
+            arch: mac-x64
+          - name: macOS arm64
+            os: macos-14          # Apple Silicon runner
+            arch: mac-arm64
+          - name: Windows x64
+            os: windows-latest
+            arch: win-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Windows builds run in the MSYS2 MINGW64 environment, the standard
+      # toolchain for Rack plugins on Windows.
+      - name: Set up MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git make tar unzip
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-jq
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential git unzip
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install jq
+
+      # ---- Fetch the matching Rack SDK ----
+      - name: Download Rack SDK (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          curl -fL -o rack-sdk.zip \
+            "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip"
+          unzip -q rack-sdk.zip
+
+      - name: Download Rack SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          curl -fL -o rack-sdk.zip \
+            "https://vcvrack.com/downloads/Rack-SDK-${RACK_SDK_VERSION}-${{ matrix.arch }}.zip"
+          unzip -q rack-sdk.zip
+
+      # ---- Build the distributable .vcvplugin ----
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          export RACK_DIR="$PWD/Rack-SDK"
+          make -j"$(getconf _NPROCESSORS_ONLN)" dist
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          export RACK_DIR="$PWD/Rack-SDK"
+          make -j"$(nproc)" dist
+
+      - name: Locate artifact
+        id: artifact
+        shell: bash
+        run: echo "path=$(ls dist/*.vcvplugin | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nacre-${{ matrix.arch }}
+          path: dist/*.vcvplugin
+          if-no-files-found: error
+
+      # ---- On a version tag, attach to the GitHub Release ----
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.vcvplugin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

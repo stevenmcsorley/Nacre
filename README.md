@@ -188,6 +188,8 @@ An original implementation of a circuit-bent audio buffer in the style of
 the Qu-Bit Data Bender: a continuously recording stereo buffer is played
 back in clocked chunks that can stutter, jump, reverse, bend, and fail.
 
+![Bitrot](bitrot.png)
+
 - **TIME** — window length. Internal clock: smooth 16 s down to 12.5 ms.
   With external clock (CLOCK button/jack): 9 div/mult steps from ÷16 to ×8.
 - **RPTS** — subdivides the window into 1–32 chunks (stutter rate).

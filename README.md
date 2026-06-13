@@ -3,8 +3,6 @@
 A small collection of VCV Rack 2 modules:
 
 - **Nacre** — granular audio processor inspired by Mutable Instruments Beads
-- **Abacus** — dual function generator inspired by Make Noise Maths
-  (see [Abacus](#abacus) below)
 - **Stiletto** — stereo dual HP/LP filter inspired by Shakmat Dual Dagger
   (see [Stiletto](#stiletto) below)
 - **Ammonite** — clocked multi-line stereo delay network inspired by Qu-Bit
@@ -122,34 +120,6 @@ deviation — uniform on the CCW side, bell-shaped ("peaky") on the CW side.
   grains rather than a dedicated delay algorithm.
 - One CV input per mix parameter destination (selected with CV SEL), as on
   hardware; quality and freeze are also available from the context menu.
-
-## Abacus
-
-An original implementation of the classic Serge/Buchla-style dual function
-generator architecture (rise/fall slope generators), as popularized by Make
-Noise **Maths**. Channels 1 and 4 are function generators; channels 2 and 3
-are attenuverters.
-
-- **RISE / FALL** — stage times from ~1 ms to ~200 s (audio-rate cycling up
-  to a few hundred Hz). CV inputs RISE, FALL, and BOTH shift the times
-  exponentially (positive voltage = slower).
-- **LOG/EXP** — vari-response: logarithmic (CCW), linear (center),
-  exponential (CW) slopes.
-- **TRIG** — fires a one-shot 0→10 V→0 envelope. **IN** is a slewed signal
-  input (gate in = ASR envelope, audio/CV in = slew limiter / portamento).
-- **CYCLE** — self-retriggers at the end of the fall: LFO mode.
-- **EOR / EOC** — End of Rise (high whenever ch 1 is not rising) and End of
-  Cycle (high whenever ch 4 is not falling) gates, for self-patching
-  ping-pong and Krell patches.
-- **Attenuverters 1–4** — scale/invert each channel. Channels 2 and 3 are
-  normalled to +10 V, so their knobs act as offset generators.
-- **SUM / INV / OR** — mixing bus: sum, inverted sum, and analog OR
-  (maximum) of the four channels. Patching a channel's variable output
-  (VAR / OUT 2 / OUT 3) removes that channel from the bus, as on the
-  hardware.
-
-"Make Noise" and "Maths" are trademarks of Make Noise Co.; this project is
-not affiliated with or endorsed by them.
 
 ## Stiletto
 

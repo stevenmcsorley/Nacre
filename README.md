@@ -221,6 +221,8 @@ style of the Qu-Bit Mojave: grains are generated from a continuously
 recording stereo buffer, with rhythm and pitch shaped by clock sync, scale
 quantization, and stochastic controls.
 
+![Sirocco](sirocco.png)
+
 - **RATE** — grain frequency, smooth (0.25 Hz–160 Hz) in free clock mode, or
   11 div/mult steps of the tap/external clock in quantized mode (CLK MODE
   button, blue/gold).

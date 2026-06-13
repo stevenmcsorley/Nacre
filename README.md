@@ -304,6 +304,8 @@ not affiliated with or endorsed by them.
 An original implementation of a tape-style stereo performance looper in
 the spirit of the Qu-Bit Stardust, with a 60-second buffer.
 
+![Tektite](tektite.png)
+
 - **Recording**: the first recording sets the loop length; further
   recordings layer into the loop per the **LOOP mode**: sound-on-sound
   (add), replace, fripper (older layers decay with each pass), or resample

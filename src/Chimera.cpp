@@ -58,6 +58,7 @@ struct Chimera : Module {
 		MODE_LIGHT,
 		CLK_LIGHT,
 		ENUMS(SLICE_LIGHT, 8),
+		SPLICE_LIGHT,
 		LIGHTS_LEN
 	};
 
@@ -156,7 +157,7 @@ struct Chimera : Module {
 
 	dsp::SchmittTrigger recTrig, spliceTrig, clockTrig;
 	dsp::BooleanTrigger recBtn, playBtn, spliceBtn, syncBtn, modeBtn;
-	dsp::PulseGenerator eosPulse;
+	dsp::PulseGenerator eosPulse, splicePulse;
 	dsp::ClockDivider lightDivider;
 
 	Chimera() {
@@ -445,9 +446,17 @@ struct Chimera : Module {
 		     spliceTrig.process(inputs[SPLICE_INPUT].getVoltage(), 0.1f, 1.f)) &&
 		    reelLen > 0) {
 			int m = clamp((int)playPos, 1, reelLen - 2);
+			// with sync running, splices snap to the clock grid so every slice
+			// is an exact number of beats — this is what keeps the loop tight
+			if (sync && clockSeen && inputs[CLOCK_INPUT].isConnected()) {
+				double beat = (double)clockPeriod * sr;
+				if (beat > 32.0)
+					m = clamp((int)(std::round(m / beat) * beat), 1, reelLen - 2);
+			}
 			auto it = std::lower_bound(markers.begin(), markers.end(), m);
 			if (it == markers.end() || std::abs(*it - m) > (int)(0.01f * sr))
 				markers.insert(it, m);
+			splicePulse.trigger(0.2f);
 		}
 
 		// ---- clock ----
@@ -537,6 +546,19 @@ struct Chimera : Module {
 			if (syncBeat <= 0 || (syncBeat % beats) == 0) {
 				if (syncBeat <= 0)
 					syncBeat = 0;
+				// scatter decisions land ON the downbeat when synced, so
+				// random slice jumps stay locked to the grid
+				float scatter = clamp(params[SCATTER_PARAM].getValue() + inputs[SCATTER_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+				if (scatter > 0.003f && random::uniform() < scatter) {
+					sliceDir = (random::uniform() < scatter * 0.4f) ? -1.f : 1.f;
+					enterSlice((int)(random::u32() % numSlices), false);
+					sliceLen = std::max(64.0, sliceEnd - sliceStart);
+				}
+				else if (scatter <= 0.003f && curSlice != selSlice) {
+					sliceDir = 1.f;
+					enterSlice(selSlice, false);
+					sliceLen = std::max(64.0, sliceEnd - sliceStart);
+				}
 				double target = (speedEff * sliceDir >= 0.f) ? sliceStart : sliceEnd - 1.0;
 				double err = std::fabs(playPos - target);
 				if (err > 64.0 && err < sliceLen - 64.0)
@@ -553,6 +575,13 @@ struct Chimera : Module {
 		double pitchRatio = std::exp2(clamp(semis, -36.f, 36.f) / 12.f);
 		float grainCtl = clamp(params[GRAIN_PARAM].getValue() + inputs[GRAIN_INPUT].getVoltage() / 10.f, 0.f, 1.f);
 		double grainSamp = (0.02 + 0.48 * grainCtl * grainCtl) * sr;
+		// clock-synced grains: the knob picks a musical division of the beat,
+		// so granular stutters are rhythmic instead of free-running
+		if (syncActive && stretchMode) {
+			static const float GDIV[9] = {1/16.f, 1/12.f, 1/8.f, 1/6.f, 1/4.f, 1/3.f, 1/2.f, 3/4.f, 1.f};
+			int gi = clamp((int)(grainCtl * 8.99f), 0, 8);
+			grainSamp = std::min(std::max((double)clockPeriod * GDIV[gi] * (double)sr, 0.005 * (double)sr), 2.0 * (double)sr);
+		}
 		// tape mode: pitch merges into speed (varispeed) for pristine playback
 		if (!stretchMode && playing)
 			speedEff *= (float)pitchRatio;
@@ -565,18 +594,26 @@ struct Chimera : Module {
 			eosPulse.trigger(0.002f);
 			float scatter = clamp(params[SCATTER_PARAM].getValue() + inputs[SCATTER_INPUT].getVoltage() / 10.f, 0.f, 1.f);
 			int next = selSlice;
-			sliceDir = 1.f;
-			if (scatter > 0.003f && random::uniform() < scatter) {
-				next = (int)(random::u32() % numSlices);
-				if (random::uniform() < scatter * 0.4f)
-					sliceDir = -1.f;
-				declick = 0.f; // scattered jumps land anywhere: fade the seam
+			// when clock-synced, scatter jumps happen on the downbeat snap
+			// instead (above) so the pattern stays on the grid
+			if (syncActive) {
+				next = curSlice;
+			}
+			else {
+				sliceDir = 1.f;
+				if (scatter > 0.003f && random::uniform() < scatter) {
+					next = (int)(random::u32() % numSlices);
+					if (random::uniform() < scatter * 0.4f)
+						sliceDir = -1.f;
+					declick = 0.f; // scattered jumps land anywhere: fade the seam
+				}
 			}
 			enterSlice(next, true);
 			jumped = true;
 		}
-		else if (curSlice != selSlice && params[SCATTER_PARAM].getValue() < 0.003f && !inputs[SCATTER_INPUT].isConnected()) {
-			// direct slice selection takes effect immediately when not scattering
+		else if (!syncActive && curSlice != selSlice && params[SCATTER_PARAM].getValue() < 0.003f && !inputs[SCATTER_INPUT].isConnected()) {
+			// direct slice selection is immediate when free-running; when
+			// clock-synced it waits for the downbeat (handled in the snap)
 			enterSlice(selSlice, true);
 			declick = 0.f;
 			jumped = true;
@@ -719,7 +756,9 @@ struct Chimera : Module {
 		outputs[ENV_OUTPUT].setVoltage(clamp(envFollow * 8.f, 0.f, 10.f));
 
 		// ---- lights ----
+		bool spliceLit = splicePulse.process(dt);
 		if (lightDivider.process()) {
+			lights[SPLICE_LIGHT].setBrightness(spliceLit ? 1.f : 0.f);
 			lights[REC_LIGHT].setBrightness(recording ? 1.f : 0.f);
 			lights[PLAY_LIGHT].setBrightness(playing ? 1.f : 0.f);
 			lights[SYNC_LIGHT].setBrightness(sync ? 1.f : 0.f);
@@ -961,6 +1000,15 @@ struct ChimeraDisplay : LedDisplay {
 			nvgText(args.vg, 3.f, 2.f, txt, NULL);
 		}
 
+		// clock pulse dot, top-right
+		if (module->clockSeen) {
+			float a = clamp(1.f - module->lastEdge / 0.1f, 0.f, 1.f);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, w - 6.f, 6.f, 2.2f);
+			nvgFillColor(args.vg, nvgRGBA(0xd9, 0xa4, 0x41, (unsigned char)(0x28 + a * 0xd0)));
+			nvgFill(args.vg);
+		}
+
 		nvgResetScissor(args.vg);
 		nvgRestore(args.vg);
 	}
@@ -989,38 +1037,36 @@ struct ChimeraWidget : ModuleWidget {
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/Chimera.svg")));
 
-		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		using namespace clayout;
 
-		static const int btns[5] = {Chimera::REC_PARAM, Chimera::PLAY_PARAM, Chimera::SPLICE_PARAM, Chimera::SYNC_PARAM, Chimera::MODE_PARAM};
-		for (int i = 0; i < 5; i++)
-			addParam(createParamCentered<VCVButton>(mm2px(Vec(BTN_X[i], YA)), module, btns[i]));
-		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(BTN_X[0], YA + YA_LED_DY)), module, Chimera::REC_LIGHT));
-		addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(BTN_X[1], YA + YA_LED_DY)), module, Chimera::PLAY_LIGHT));
-		addChild(createLightCentered<MediumLight<GreenLight>>(mm2px(Vec(BTN_X[3], YA + YA_LED_DY)), module, Chimera::SYNC_LIGHT));
-		addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(BTN_X[4], YA + YA_LED_DY)), module, Chimera::MODE_LIGHT));
+		// transport: light-in-button bezels, no floating LEDs
+		addParam(createLightParamCentered<VCVLightBezel<RedLight>>(mm2px(Vec(BTN_X[0], YA)), module, Chimera::REC_PARAM, Chimera::REC_LIGHT));
+		addParam(createLightParamCentered<VCVLightBezel<GreenLight>>(mm2px(Vec(BTN_X[1], YA)), module, Chimera::PLAY_PARAM, Chimera::PLAY_LIGHT));
+		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(BTN_X[2], YA)), module, Chimera::SPLICE_PARAM, Chimera::SPLICE_LIGHT));
+		addParam(createLightParamCentered<VCVLightBezel<GreenLight>>(mm2px(Vec(BTN_X[3], YA)), module, Chimera::SYNC_PARAM, Chimera::SYNC_LIGHT));
+		addParam(createLightParamCentered<VCVLightBezel<BlueLight>>(mm2px(Vec(BTN_X[4], YA)), module, Chimera::MODE_PARAM, Chimera::MODE_LIGHT));
 
-		addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(SOS_X, YB)), module, Chimera::SOS_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(SOS_X, YB)), module, Chimera::SOS_PARAM));
 		static const int eq[3] = {Chimera::EQ_LOW_PARAM, Chimera::EQ_MID_PARAM, Chimera::EQ_HIGH_PARAM};
 		for (int i = 0; i < 3; i++)
-			addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(EQ_X[i], YB)), module, eq[i]));
+			addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(EQ_X[i], YB)), module, eq[i]));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(CHOP_X, YB)), module, Chimera::CHOP_PARAM));
 
-		addParam(createParamCentered<Rogan3PSWhite>(mm2px(Vec(SPEED_X, YC)), module, Chimera::SPEED_PARAM));
-		addParam(createParamCentered<Rogan3PSWhite>(mm2px(Vec(PITCH_X, YC)), module, Chimera::PITCH_PARAM));
-		addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(GRAIN_X, YC)), module, Chimera::GRAIN_PARAM));
-		addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(SLICE_X, YC)), module, Chimera::SLICE_PARAM));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(CHOP_X, YC)), module, Chimera::CHOP_PARAM));
+		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(SPEED_X, YC)), module, Chimera::SPEED_PARAM));
+		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(PITCH_X, YC)), module, Chimera::PITCH_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(GRAIN_X, YC)), module, Chimera::GRAIN_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(SLICE_X, YC)), module, Chimera::SLICE_PARAM));
+		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(SCATTER_X, YC)), module, Chimera::SCATTER_PARAM));
 
-		addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(SCATTER_X, YD)), module, Chimera::SCATTER_PARAM));
 		ChimeraDisplay* disp = createWidget<ChimeraDisplay>(mm2px(Vec(DISP_X, DISP_Y)));
 		disp->box.size = mm2px(Vec(DISP_W, DISP_H));
 		disp->module = module;
 		addChild(disp);
-		addChild(createLightCentered<SmallLight<WhiteLight>>(mm2px(Vec(CLK_LIGHT_X, CLK_LIGHT_Y)), module, Chimera::CLK_LIGHT));
 
 		static const int r1[6] = {Chimera::SPEED_INPUT, Chimera::VOCT_INPUT, Chimera::GRAIN_INPUT,
 		                          Chimera::SLICE_INPUT, Chimera::SCATTER_INPUT, Chimera::CLOCK_INPUT};

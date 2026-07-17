@@ -20,11 +20,12 @@ YC_LABEL = 64.0
 SPEED_X, PITCH_X = 16.0, 42.0
 GRAIN_X, SLICE_X, CHOP_X = 66.0, 86.0, 103.0
 
-YD = 72.5                              # scatter + slice lights
+YD = 72.5                              # scatter + reel display
 YD_LABEL = 80.6
 SCATTER_X = 16.0
-SLICE_LIGHT_X0, SLICE_LIGHT_DX, SLICE_LIGHT_Y = 34.0, 6.4, 72.5
-CLK_LIGHT = (103.0, 72.5)
+DISP_X, DISP_Y = 28.5, 66.5            # reel display (waveform / slices / playhead)
+DISP_W, DISP_H = 78.0, 15.0
+CLK_LIGHT = (106.6, 90.0)              # beside the clock jack
 
 R1, R2, R3 = 90.0, 104.0, 118.0
 J6 = [10.0, 28.0, 46.0, 64.0, 82.0, 100.0]
@@ -112,6 +113,8 @@ svg.append(text_paths(SLICE_X, YC_LABEL, "SLICE", 2.1, FG))
 svg.append(text_paths(CHOP_X, YC_LABEL, "CHOP", 1.6, FG))
 
 svg.append(text_paths(SCATTER_X, YD_LABEL, "SCATTER", 2.1, FG))
+# recessed frame around the reel display
+svg.append(f'<rect x="{DISP_X-0.8}" y="{DISP_Y-0.8}" width="{DISP_W+1.6}" height="{DISP_H+1.6}" rx="1.2" fill="#14161a" stroke="{RING}" stroke-width="0.5"/>')
 
 JACKS = [
     (J6[0], R1, "SPEED", 0), (J6[1], R1, "V/OCT", 0), (J6[2], R1, "GRAIN", 0),
@@ -144,7 +147,7 @@ constexpr float GRAIN_X = {GRAIN_X}f, SLICE_X = {SLICE_X}f, CHOP_X = {CHOP_X}f;
 constexpr float YC = {YC}f;
 constexpr float YD = {YD}f;
 constexpr float SCATTER_X = {SCATTER_X}f;
-constexpr float SLICE_LIGHT_X0 = {SLICE_LIGHT_X0}f, SLICE_LIGHT_DX = {SLICE_LIGHT_DX}f, SLICE_LIGHT_Y = {SLICE_LIGHT_Y}f;
+constexpr float DISP_X = {DISP_X}f, DISP_Y = {DISP_Y}f, DISP_W = {DISP_W}f, DISP_H = {DISP_H}f;
 constexpr float CLK_LIGHT_X = {CLK_LIGHT[0]}f, CLK_LIGHT_Y = {CLK_LIGHT[1]}f;
 constexpr float R1 = {R1}f, R2 = {R2}f, R3 = {R3}f;
 constexpr float J6[6] = {{{', '.join(f'{x}f' for x in J6)}}};

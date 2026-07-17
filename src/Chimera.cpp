@@ -125,6 +125,8 @@ struct Chimera : Module {
 	int bufLen = 0;     // allocated
 	int reelLen = 0;    // recorded/loaded length
 	std::vector<int> markers;
+	int reelRev = 0;    // bumped whenever the reel audio changes (display cache key)
+	float lastSr = 44100.f;
 
 	bool recording = false;
 	bool playing = true;
@@ -208,10 +210,64 @@ struct Chimera : Module {
 			g.active = false;
 	}
 
+	// linear-resample the current reel (and markers) to a new sample rate
+	void resampleReel(float fromSr, float toSr) {
+		if (reelLen < 2 || fromSr <= 0.f || toSr <= 0.f)
+			return;
+		std::vector<float> oL(bufL.begin(), bufL.begin() + reelLen);
+		std::vector<float> oR(bufR.begin(), bufR.begin() + reelLen);
+		double ratio = (double)fromSr / toSr;
+		int nLen = std::min((int)(reelLen / ratio), bufLen);
+		for (int i = 0; i < nLen; i++) {
+			double sp = i * ratio;
+			int i0 = std::min((int)sp, reelLen - 2);
+			float fr = (float)(sp - i0);
+			bufL[i] = oL[i0] + (oL[i0 + 1] - oL[i0]) * fr;
+			bufR[i] = oR[i0] + (oR[i0 + 1] - oR[i0]) * fr;
+		}
+		reelLen = nLen;
+		for (int& m : markers)
+			m = clamp((int)(m / ratio), 1, std::max(1, reelLen - 1));
+		markers.erase(std::unique(markers.begin(), markers.end()), markers.end());
+		playPos = 0.0;
+		reelRev++;
+	}
+
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		// keep the user's reel across sample-rate changes instead of wiping it
+		float oldSr = lastSr;
+		std::vector<float> oL, oR;
+		std::vector<int> oM = markers;
+		int oLen = reelLen;
+		if (oLen > 1) {
+			oL.assign(bufL.begin(), bufL.begin() + oLen);
+			oR.assign(bufR.begin(), bufR.begin() + oLen);
+		}
 		allocate(e.sampleRate);
-		synthesizeDemoLoop(e.sampleRate);
+		if (oLen > 1 && oldSr > 0.f) {
+			double ratio = (double)oldSr / e.sampleRate;
+			int nLen = std::min((int)(oLen / ratio), bufLen);
+			for (int i = 0; i < nLen; i++) {
+				double sp = i * ratio;
+				int i0 = std::min((int)sp, oLen - 2);
+				float fr = (float)(sp - i0);
+				bufL[i] = oL[i0] + (oL[i0 + 1] - oL[i0]) * fr;
+				bufR[i] = oR[i0] + (oR[i0 + 1] - oR[i0]) * fr;
+			}
+			reelLen = nLen;
+			markers.clear();
+			for (int m : oM) {
+				int nm = clamp((int)(m / ratio), 1, std::max(1, reelLen - 1));
+				if (markers.empty() || markers.back() != nm)
+					markers.push_back(nm);
+			}
+		}
+		else {
+			synthesizeDemoLoop(e.sampleRate);
+		}
+		lastSr = e.sampleRate;
 		eqLowVal = eqMidVal = eqHighVal = 1e9f;
+		reelRev++;
 	}
 
 	// small built-in arpeggio loop so the controls are audible out of the box
@@ -235,6 +291,8 @@ struct Chimera : Module {
 		markers.clear();
 		for (int k = 1; k < 8; k++)
 			markers.push_back(k * noteLen);
+		playPos = 0.0;
+		reelRev++;
 	}
 
 	bool loadWav(const std::string& path) {
@@ -317,6 +375,7 @@ struct Chimera : Module {
 		reelLen = outFrames;
 		markers.clear();
 		playPos = 0.0;
+		reelRev++;
 		return true;
 	}
 
@@ -371,6 +430,7 @@ struct Chimera : Module {
 				reelLen = std::max(recWrite, (int)(0.05f * sr));
 				markers.clear();
 				playPos = 0.0;
+				reelRev++;
 			}
 		}
 		if (playBtn.process(params[PLAY_PARAM].getValue() > 0.f))
@@ -416,11 +476,13 @@ struct Chimera : Module {
 				freshRecording = false;
 				reelLen = bufLen;
 				markers.clear();
+				reelRev++;
 			}
 			// monitor input while building the reel
 			outputs[OUT_L_OUTPUT].setVoltage(inL * 5.f);
 			outputs[OUT_R_OUTPUT].setVoltage(inR * 5.f);
 			outputs[ENV_OUTPUT].setVoltage(0.f);
+			outputs[EOS_OUTPUT].setVoltage(0.f);
 			lights[REC_LIGHT].setBrightness(1.f);
 			return;
 		}
@@ -495,19 +557,11 @@ struct Chimera : Module {
 		if (!stretchMode && playing)
 			speedEff *= (float)pitchRatio;
 
-		// ---- overdub (sound on sound) at the playhead ----
-		if (recording && !freshRecording) {
-			float sos = params[SOS_PARAM].getValue();
-			int wi = clamp((int)playPos, 0, reelLen - 1);
-			bufL[wi] = clamp(bufL[wi] * sos + inL, -2.f, 2.f);
-			bufR[wi] = clamp(bufR[wi] * sos + inR, -2.f, 2.f);
-		}
-
 		// ---- advance playhead within slice ----
+		double prevPos = playPos;
 		playPos += speedEff * sliceDir;
-		bool eos = false;
+		bool jumped = false;
 		if (playPos >= sliceEnd || playPos < sliceStart) {
-			eos = true;
 			eosPulse.trigger(0.002f);
 			float scatter = clamp(params[SCATTER_PARAM].getValue() + inputs[SCATTER_INPUT].getVoltage() / 10.f, 0.f, 1.f);
 			int next = selSlice;
@@ -516,14 +570,32 @@ struct Chimera : Module {
 				next = (int)(random::u32() % numSlices);
 				if (random::uniform() < scatter * 0.4f)
 					sliceDir = -1.f;
+				declick = 0.f; // scattered jumps land anywhere: fade the seam
 			}
 			enterSlice(next, true);
+			jumped = true;
 		}
 		else if (curSlice != selSlice && params[SCATTER_PARAM].getValue() < 0.003f && !inputs[SCATTER_INPUT].isConnected()) {
 			// direct slice selection takes effect immediately when not scattering
 			enterSlice(selSlice, true);
+			declick = 0.f;
+			jumped = true;
 		}
-		static_cast<void>(eos);
+
+		// ---- overdub (sound on sound) along the playhead's path ----
+		// writing a single rounded sample leaves gaps at any speed != 1x
+		if (recording && !freshRecording) {
+			float sos = params[SOS_PARAM].getValue();
+			int i0 = (int)std::floor(std::min(prevPos, playPos));
+			int i1 = (int)std::floor(std::max(prevPos, playPos));
+			if (jumped || i1 - i0 > 16) {
+				i0 = i1 = clamp((int)prevPos, 0, reelLen - 1);
+			}
+			for (int wi = std::max(0, i0); wi <= std::min(reelLen - 1, i1); wi++) {
+				bufL[wi] = clamp(bufL[wi] * sos + inL, -2.f, 2.f);
+				bufR[wi] = clamp(bufR[wi] * sos + inR, -2.f, 2.f);
+			}
+		}
 
 		// ---- render ----
 		auto readReel = [&](double rp, float& l, float& r) {
@@ -600,6 +672,11 @@ struct Chimera : Module {
 			}
 			wetL *= 0.75f;
 			wetR *= 0.75f;
+		}
+		// a stopped tape is silent, not a held DC sample
+		if (!stretchMode && !playing) {
+			wetL = 0.f;
+			wetR = 0.f;
 		}
 
 		// declick ramp after phase snaps
@@ -717,6 +794,193 @@ struct Chimera : Module {
 			[&](int m) { return m <= 0 || m >= reelLen; }), markers.end());
 		std::sort(markers.begin(), markers.end());
 		playPos = 0.0;
+		// a reel saved at a different sample rate would play at the wrong pitch
+		float savedSr = 0.f;
+		if ((j = json_object_get(root, "sampleRate")))
+			savedSr = (float)json_number_value(j);
+		float esr = APP->engine->getSampleRate();
+		if (reelLen > 1 && savedSr > 0.f && std::fabs(savedSr - esr) > 0.5f)
+			resampleReel(savedSr, esr);
+		reelRev++;
+	}
+};
+
+// Live reel display: waveform, splice markers, active slice, playhead, grain
+// positions and record state. Click a region to select that slice.
+struct ChimeraDisplay : LedDisplay {
+	Chimera* module = nullptr;
+	static const int NCOL = 168;
+	std::vector<float> peaks;
+	int cachedRev = -1;
+	int refreshCtr = 0;
+
+	void rebuildPeaks(int len) {
+		peaks.assign(NCOL, 0.f);
+		if (!module || len < 2)
+			return;
+		for (int c = 0; c < NCOL; c++) {
+			int a = (int)((double)c * len / NCOL);
+			int b = std::max(a + 1, (int)((double)(c + 1) * len / NCOL));
+			int stride = std::max(1, (b - a) / 48);
+			float pk = 0.f;
+			for (int i = a; i < b && i < module->bufLen; i += stride)
+				pk = std::max(pk, std::max(std::fabs(module->bufL[i]), std::fabs(module->bufR[i])));
+			peaks[c] = std::min(1.f, pk);
+		}
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1) {
+			LedDisplay::drawLayer(args, layer);
+			return;
+		}
+		float w = box.size.x, h = box.size.y;
+		nvgSave(args.vg);
+		nvgScissor(args.vg, 0, 0, w, h);
+
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		NVGcolor dim = nvgRGB(0x8b, 0x8f, 0x99);
+		NVGcolor wave = nvgRGB(0xbf, 0xd2, 0xe8);
+		NVGcolor red = nvgRGB(0xe8, 0x4b, 0x4b);
+
+		if (!module) {
+			// module browser preview: a decorative waveform
+			nvgBeginPath(args.vg);
+			for (int i = 0; i < 60; i++) {
+				float x = w * i / 59.f;
+				float y = h * 0.5f + std::sin(i * 0.7f) * h * 0.3f * std::sin(i * 0.13f);
+				if (i == 0) nvgMoveTo(args.vg, x, y); else nvgLineTo(args.vg, x, y);
+			}
+			nvgStrokeColor(args.vg, wave);
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+			nvgResetScissor(args.vg);
+			nvgRestore(args.vg);
+			return;
+		}
+
+		bool fresh = module->recording && module->freshRecording;
+		int len = fresh ? std::max(module->recWrite, 1) : module->reelLen;
+
+		// refresh the cached waveform when the reel changes; keep refreshing
+		// at a low rate while any recording is in progress
+		refreshCtr++;
+		if (module->reelRev != cachedRev || (module->recording && refreshCtr >= 15)) {
+			cachedRev = module->reelRev;
+			refreshCtr = 0;
+			rebuildPeaks(len);
+		}
+
+		if (len < 2) {
+			if (font) {
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 10.f);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+				nvgFillColor(args.vg, dim);
+				nvgText(args.vg, w * 0.5f, h * 0.5f, "EMPTY - REC OR LOAD SAMPLE", NULL);
+			}
+			nvgResetScissor(args.vg);
+			nvgRestore(args.vg);
+			return;
+		}
+
+		// active slice highlight
+		if (!fresh && module->numSlices > 1) {
+			float x0 = (float)(module->sliceStart / len) * w;
+			float x1 = (float)(module->sliceEnd / len) * w;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, x0, 0, std::max(1.f, x1 - x0), h);
+			nvgFillColor(args.vg, nvgRGBA(0xd9, 0xa4, 0x41, 0x30));
+			nvgFill(args.vg);
+		}
+
+		// waveform
+		float mid = h * 0.56f;
+		float amp = h * 0.40f;
+		nvgBeginPath(args.vg);
+		for (int c = 0; c < NCOL; c++) {
+			float x = (c + 0.5f) * w / NCOL;
+			float e = std::max(0.02f, peaks[c]) * amp;
+			nvgMoveTo(args.vg, x, mid - e);
+			nvgLineTo(args.vg, x, mid + e);
+		}
+		nvgStrokeColor(args.vg, fresh ? nvgRGBA(0xe8, 0x4b, 0x4b, 0xb0) : nvgRGBA(0xbf, 0xd2, 0xe8, 0x9a));
+		nvgStrokeWidth(args.vg, std::max(1.f, w / NCOL * 0.7f));
+		nvgStroke(args.vg);
+
+		// splice markers
+		for (int m : module->markers) {
+			float x = (float)m / len * w;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, x, 0);
+			nvgLineTo(args.vg, x, h);
+			nvgStrokeColor(args.vg, nvgRGBA(0xd9, 0xa4, 0x41, 0x90));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+		}
+
+		// grain positions (stretch mode)
+		if (!fresh && module->stretchMode) {
+			for (const Chimera::Grain& g : module->grains) {
+				if (!g.active)
+					continue;
+				float x = (float)(g.readPos / len) * w;
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, x, h * 0.16f, 1.6f);
+				nvgFillColor(args.vg, nvgRGBA(0x7f, 0xd4, 0xe8, 0xc0));
+				nvgFill(args.vg);
+			}
+		}
+
+		// playhead
+		float px = fresh ? ((float)module->recWrite / len * w)
+		                 : (float)(module->playPos / len) * w;
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, px, 0);
+		nvgLineTo(args.vg, px, h);
+		nvgStrokeColor(args.vg, fresh ? red : nvgRGB(0xff, 0xff, 0xff));
+		nvgStrokeWidth(args.vg, 1.4f);
+		nvgStroke(args.vg);
+
+		// status line
+		if (font) {
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFontSize(args.vg, 9.f);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+			float sec = len / APP->engine->getSampleRate();
+			char txt[96];
+			if (fresh)
+				snprintf(txt, sizeof(txt), "REC %.1fs", sec);
+			else
+				snprintf(txt, sizeof(txt), "%s %.1fs  S%d/%d%s%s",
+					module->stretchMode ? "STRETCH" : "TAPE", sec,
+					module->curSlice + 1, module->numSlices,
+					module->sync ? "  SYNC" : "",
+					(module->recording && !module->freshRecording) ? "  DUB" : "");
+			nvgFillColor(args.vg, fresh ? red : dim);
+			nvgText(args.vg, 3.f, 2.f, txt, NULL);
+		}
+
+		nvgResetScissor(args.vg);
+		nvgRestore(args.vg);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && module && module->reelLen > 1) {
+			double pos = clamp(e.pos.x / box.size.x, 0.f, 0.9999f) * module->reelLen;
+			int n = module->numSlices;
+			for (int i = 0; i < n; i++) {
+				double s, en;
+				module->sliceBounds(i, s, en);
+				if (pos >= s && pos < en) {
+					module->params[Chimera::SLICE_PARAM].setValue((i + 0.5f) / n);
+					break;
+				}
+			}
+			e.consume(this);
+			return;
+		}
+		LedDisplay::onButton(e);
 	}
 };
 
@@ -752,8 +1016,10 @@ struct ChimeraWidget : ModuleWidget {
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(CHOP_X, YC)), module, Chimera::CHOP_PARAM));
 
 		addParam(createParamCentered<Rogan1PSWhite>(mm2px(Vec(SCATTER_X, YD)), module, Chimera::SCATTER_PARAM));
-		for (int i = 0; i < 8; i++)
-			addChild(createLightCentered<SmallLight<YellowLight>>(mm2px(Vec(SLICE_LIGHT_X0 + i * SLICE_LIGHT_DX, SLICE_LIGHT_Y)), module, Chimera::SLICE_LIGHT + i));
+		ChimeraDisplay* disp = createWidget<ChimeraDisplay>(mm2px(Vec(DISP_X, DISP_Y)));
+		disp->box.size = mm2px(Vec(DISP_W, DISP_H));
+		disp->module = module;
+		addChild(disp);
 		addChild(createLightCentered<SmallLight<WhiteLight>>(mm2px(Vec(CLK_LIGHT_X, CLK_LIGHT_Y)), module, Chimera::CLK_LIGHT));
 
 		static const int r1[6] = {Chimera::SPEED_INPUT, Chimera::VOCT_INPUT, Chimera::GRAIN_INPUT,
@@ -790,6 +1056,8 @@ struct ChimeraWidget : ModuleWidget {
 		menu->addChild(createMenuItem("Erase reel", "", [=]() {
 			module->reelLen = 0;
 			module->markers.clear();
+			module->playPos = 0.0;
+			module->reelRev++;
 		}));
 	}
 };

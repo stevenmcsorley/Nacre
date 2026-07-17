@@ -112,6 +112,7 @@
 <path d="M 19.080 80.600 L 20.060 80.600" fill="none" stroke="#e8e4da" stroke-width="0.336" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M 20.970 81.650 L 20.970 79.550 L 22.020 79.550 L 22.370 79.865 L 22.370 80.355 L 22.020 80.670 L 20.970 80.670" fill="none" stroke="#e8e4da" stroke-width="0.336" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M 21.670 80.670 L 22.370 81.650" fill="none" stroke="#e8e4da" stroke-width="0.336" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="27.7" y="65.7" width="79.6" height="16.6" rx="1.2" fill="#14161a" stroke="#3c414b" stroke-width="0.5"/>
 <circle cx="10.0" cy="90.0" r="4.4" fill="none" stroke="#3c414b" stroke-width="0.5"/>
 <path d="M 7.800 83.075 L 7.550 82.850 L 7.050 82.850 L 6.800 83.075 L 6.800 83.375 L 7.050 83.600 L 7.550 83.600 L 7.800 83.825 L 7.800 84.125 L 7.550 84.350 L 7.050 84.350 L 6.800 84.125" fill="none" stroke="#8b8f99" stroke-width="0.280" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M 8.150 84.350 L 8.150 82.850 L 8.900 82.850 L 9.150 83.075 L 9.150 83.425 L 8.900 83.650 L 8.150 83.650" fill="none" stroke="#8b8f99" stroke-width="0.280" stroke-linecap="round" stroke-linejoin="round"/>

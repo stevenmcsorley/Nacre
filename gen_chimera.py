@@ -30,8 +30,8 @@ TITLE = (W / 2, 6.8)
 
 BG = "#e9e7e1"
 EDGE = "#c8c5bc"
-FG = "#141414"
-DIM = "#55524b"
+FG = "#f2efe8"
+DIM = "#d8d3c6"
 BLUE = "#2952a3"
 ACCENT = "#df9a31"
 RING = "#2a2a2a"
@@ -89,35 +89,61 @@ def text_paths(x, y, s, h, color, weight=None, spacing=5.4):
 def ring(x, y, r, color=RING, sw=0.5):
     return f'<circle cx="{x}" cy="{y}" r="{r}" fill="none" stroke="{color}" stroke-width="{sw}"/>'
 
+def chip(x, y, s, h, spacing=5.4, pad=0.9):
+    """dark plate behind a text_paths label so it reads over the artwork"""
+    scale = h / 6.0
+    adv = spacing * scale
+    width = adv * len(s) - 1.4 * scale
+    return (f'<rect x="{x - width/2 - pad:.2f}" y="{y - h/2 - 0.55:.2f}" '
+            f'width="{width + 2*pad:.2f}" height="{h + 1.1:.2f}" rx="0.7" fill="#14161a"/>')
+
 svg = []
 svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}mm" height="{H}mm" viewBox="0 0 {W} {H}">')
 svg.append(f'<rect x="0" y="0" width="{W}" height="{H}" fill="{BG}"/>')
-svg.append(f'<rect x="0.35" y="0.35" width="{W-0.7}" height="{H-0.7}" fill="none" stroke="{EDGE}" stroke-width="0.7"/>')
+# acacia dusk artwork (ComfyUI render, traced) as the full-bleed backplate
+import re as _re
+_art = open(r"D:\comfy\panels\chimera_dusk.svg", encoding="utf-8").read()
+_vb = _re.search(r'viewBox="([^"]+)"', _art).group(1).split()
+_inner = _art[_art.index(">", _art.index("<svg")) + 1 : _art.rindex("</svg>")]
+svg.append(f'<g transform="scale({W/float(_vb[2]):.6f} {H/float(_vb[3]):.6f})">{_inner}</g>')
+svg.append(f'<rect x="0.35" y="0.35" width="{W-0.7}" height="{H-0.7}" fill="none" stroke="#14161a" stroke-width="0.7"/>')
 
 # ---- header: bullets + letterspaced title + blue subtitle (Timiszoara style)
-svg.append(text_paths(*TITLE, "CHIMERA", 4.8, FG, weight=0.95, spacing=6.4))
 tw = 6.4 * (4.8 / 6.0) * 7
+svg.append(f'<rect x="{W/2 - tw/2 - 7.2}" y="{TITLE[1] - 3.4}" width="{tw + 14.4}" height="6.8" rx="1.4" fill="#14161a"/>')
+svg.append(text_paths(*TITLE, "CHIMERA", 4.8, FG, weight=0.95, spacing=6.4))
 svg.append(f'<circle cx="{W/2 - tw/2 - 3.4}" cy="{TITLE[1]}" r="0.95" fill="{FG}"/>')
 svg.append(f'<circle cx="{W/2 + tw/2 + 3.4}" cy="{TITLE[1]}" r="0.95" fill="{FG}"/>')
+svg.append(chip(W / 2, 12.4, "HALFAGIRAF SPLICE SAMPLER", 1.8))
 svg.append(text_paths(W / 2, 12.4, "HALFAGIRAF SPLICE SAMPLER", 1.8, BLUE, weight=0.42))
 
 # ---- transport labels
 for x, label in zip(BTN_X, ["REC", "PLAY", "SPLICE", "SYNC", "MODE"]):
+    svg.append(chip(x, YA_LABEL, label, 1.6))
     svg.append(text_paths(x, YA_LABEL, label, 1.6, FG))
 
 # ---- sos / eq / chop
+svg.append(chip(SOS_X, YB_LABEL, "SOS", 1.8))
 svg.append(text_paths(SOS_X, YB_LABEL, "SOS", 1.8, FG))
-svg.append(f'<rect x="33.5" y="27.6" width="57.5" height="18.4" rx="1.4" fill="none" stroke="{DIM}" stroke-width="0.32"/>')
-svg.append(text_paths(37.6, 29.6, "EQ", 1.5, DIM))
+svg.append(f'<rect x="33.5" y="27.6" width="57.5" height="18.4" rx="1.4" fill="none" stroke="#f2efe8" stroke-width="0.32"/>')
+svg.append(chip(37.6, 29.6, "EQ", 1.5))
+svg.append(text_paths(37.6, 29.6, "EQ", 1.5, FG))
 for x, label in zip(EQ_X, ["LOW", "MID", "HIGH"]):
+    svg.append(chip(x, YB_LABEL, label, 1.6))
     svg.append(text_paths(x, YB_LABEL, label, 1.6, FG))
+svg.append(chip(CHOP_X, YB_LABEL, "CHOP", 1.5))
 svg.append(text_paths(CHOP_X, YB_LABEL, "CHOP", 1.5, FG))
 
 # ---- main row
+svg.append(chip(SPEED_X, YC_LABEL, "SPEED", 2.1))
 svg.append(text_paths(SPEED_X, YC_LABEL, "SPEED", 2.1, FG))
+svg.append(chip(PITCH_X, YC_LABEL, "PITCH", 2.1))
 svg.append(text_paths(PITCH_X, YC_LABEL, "PITCH", 2.1, FG))
+svg.append(chip(GRAIN_X, YC_LABEL, "GRAIN", 1.9))
 svg.append(text_paths(GRAIN_X, YC_LABEL, "GRAIN", 1.9, FG))
+svg.append(chip(SLICE_X, YC_LABEL, "SLICE", 1.9))
 svg.append(text_paths(SLICE_X, YC_LABEL, "SLICE", 1.9, FG))
+svg.append(chip(SCATTER_X, YC_LABEL, "SCAT", 1.9))
 svg.append(text_paths(SCATTER_X, YC_LABEL, "SCAT", 1.9, FG))
 
 # ---- reel display frame
@@ -136,10 +162,11 @@ JACKS = [
 ]
 for x, y, label, is_out in JACKS:
     inside = x > OB_X and y > OB_Y
-    col = "#e8e4da" if inside else FG
-    rcol = ACCENT if inside else RING
+    rcol = ACCENT if is_out else "#f2efe8"
     svg.append(ring(x, y, 4.4, rcol))
-    svg.append(text_paths(x, y - 6.4, label, 1.5, col))
+    if not inside:
+        svg.append(chip(x, y - 6.4, label, 1.5))
+    svg.append(text_paths(x, y - 6.4, label, 1.5, "#f2efe8"))
 
 # ---- halfagiraf logo + wordmark, bottom left
 LOGO_MAIN = "M 144.456 7.255 C 144.184 7.964, 144.082 18.884, 144.231 31.522 L 144.500 54.500 151.250 54.796 L 158 55.091 158 84.046 L 158 113 170.500 113 L 183 113 183 84.042 L 183 55.084 190.750 54.792 L 198.500 54.500 198.500 30.500 L 198.500 6.500 171.725 6.234 C 150.612 6.024, 144.845 6.240, 144.456 7.255 M 232 30.500 L 232 55 239 55 L 246 55 246 84 L 246 113 258.864 113 L 271.727 113 272.265 102.750 C 272.561 97.112, 272.669 86.425, 272.506 79 C 272.342 71.575, 272.438 63.138, 272.719 60.250 L 273.230 55 280.115 55 L 287 55 287 30.500 L 287 6 259.500 6 L 232 6 232 30.500 M 6.477 117.678 C 9.269 143.937, 26.269 168.765, 49.385 180.345 C 63.322 187.326, 68.877 188.197, 100.500 188.358 L 128.500 188.500 128.766 162.430 L 129.033 136.360 118.106 130.106 C 88.827 113.347, 82.068 111.722, 39.626 111.241 L 5.752 110.856 6.477 117.678 M 148.300 148 C 148.300 151.025, 148.487 152.262, 148.716 150.750 C 148.945 149.238, 148.945 146.762, 148.716 145.250 C 148.487 143.738, 148.300 144.975, 148.300 148 M 272.402 188 C 272.402 196.525, 272.556 200.012, 272.743 195.750 C 272.931 191.488, 272.931 184.512, 272.743 180.250 C 272.556 175.988, 272.402 179.475, 272.402 188 M 148.425 195 C 148.425 206.825, 148.569 211.662, 148.746 205.750 C 148.923 199.838, 148.923 190.162, 148.746 184.250 C 148.569 178.338, 148.425 183.175, 148.425 195 M 272.434 240.500 C 272.433 254.250, 272.574 260.014, 272.747 253.308 C 272.919 246.603, 272.920 235.353, 272.748 228.308 C 272.576 221.264, 272.434 226.750, 272.434 240.500 M 148.409 256.500 C 148.408 265.850, 148.558 269.810, 148.743 265.299 C 148.928 260.789, 148.929 253.139, 148.745 248.299 C 148.562 243.460, 148.410 247.150, 148.409 256.500 M 192.089 252.089 C 186.168 258.963, 182.104 264.490, 182.611 264.979 C 184.178 266.487, 232.948 285.893, 233.388 285.182 C 233.762 284.577, 205.861 243.461, 203.419 241.019 C 202.800 240.400, 198.744 244.363, 192.089 252.089 M 272.468 334 C 272.468 365.075, 272.594 377.788, 272.749 362.250 C 272.904 346.713, 272.904 321.288, 272.749 305.750 C 272.594 290.213, 272.468 302.925, 272.468 334 M 144.242 367.750 L 144.500 426.500 171.609 426.766 L 198.718 427.032 199.350 421.766 C 199.698 418.870, 199.987 408.593, 199.991 398.930 L 200 381.360 172.901 345.180 C 157.996 325.281, 145.392 309, 144.893 309 C 144.355 309, 144.089 332.998, 144.242 367.750 M 217 493.500 L 217 578 244.500 578 L 272 578 272 528.422 L 272 478.845 264.750 469.547 C 260.762 464.434, 248.769 448.719, 238.099 434.625 C 227.428 420.531, 218.316 409, 217.849 409 C 217.382 409, 217 447.025, 217 493.500 M 145 596.500 L 145 639.032 172.250 638.766 L 199.500 638.500 199.500 596.500 L 199.500 554.500 172.250 554.234 L 145 553.968 145 596.500 M 71 670 L 71 703 100 703 L 129 703 129 670 L 129 637 100 637 L 71 637 71 670 M 246.486 693.981 C 198.343 704.867, 159.739 751.267, 158.695 799.500 L 158.500 808.500 215.500 808.500 L 272.500 808.500 272.813 750.250 L 273.125 692 263.813 692.084 C 258.691 692.131, 250.894 692.984, 246.486 693.981 M 71 764.500 L 71 809.031 99.750 808.765 L 128.500 808.500 128.500 764.500 L 128.500 720.500 99.750 720.235 L 71 719.969 71 764.500"
@@ -149,6 +176,7 @@ svg.append(f'<g transform="translate(7.2, 119.4) scale({ls:.6f})">')
 svg.append(f'<path d="{LOGO_MAIN}" fill="{FG}"/>')
 svg.append(f'<path d="{LOGO_GOLD}" fill="{ACCENT}"/>')
 svg.append('</g>')
+svg.append(chip(24.0, 124.0, "HALFAGIRAF", 2.2))
 svg.append(text_paths(24.0, 124.0, "HALFAGIRAF", 2.2, FG, weight=0.5))
 
 svg.append('</svg>')

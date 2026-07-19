@@ -13,7 +13,6 @@ extern Model* modelSirocco;
 extern Model* modelEspalier;
 extern Model* modelTektite;
 extern Model* modelHaymaker;
-extern Model* modelLariat;
 extern Model* modelMaelstrom;
 extern Model* modelChimera;
 extern Model* modelCatgut;

@@ -107,16 +107,6 @@
       ]
     },
     {
-      "slug": "Lariat",
-      "name": "Lariat",
-      "description": "CV/gate phrase looper: records V/oct, gate, and two CV lanes as you play, then loops them",
-      "tags": [
-        "Recorder",
-        "Utility",
-        "Sequencer"
-      ]
-    },
-    {
       "slug": "Maelstrom",
       "name": "Maelstrom",
       "description": "Voltage-controlled pitch-shifting echo inspired by Make Noise Echophon",

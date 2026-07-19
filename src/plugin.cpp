@@ -13,7 +13,6 @@ void init(Plugin* p) {
 	p->addModel(modelEspalier);
 	p->addModel(modelTektite);
 	p->addModel(modelHaymaker);
-	p->addModel(modelLariat);
 	p->addModel(modelMaelstrom);
 	p->addModel(modelChimera);
 	p->addModel(modelCatgut);

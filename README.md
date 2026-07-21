@@ -435,10 +435,10 @@ engine that fully decouples time from pitch.
 
 - **Reel**: record from the inputs (first recording sets the reel, up to
   60 s; REC again later overdubs at the playhead with the **SOS** knob
-  setting how much of the old layer survives), or load a WAV via the
-  context menu (any bit depth/rate, resampled on load). A built-in demo
-  arpeggio loop plays out of the box. The reel and splices are saved
-  inside the patch.
+  setting how much of the old layer survives), or load a PCM/float WAV via
+  the context menu (common bit depths and any rate, resampled on load). A
+  built-in demo arpeggio loop plays out of the box. The reel and splices
+  are saved inside the patch.
 - **MODE button** — *tape* (default): pristine direct playback with an
   equal-power crossfade at every loop point for seamless cycling; pitch
   and speed merge varispeed-style. *Stretch*: the granular engine

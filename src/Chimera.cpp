@@ -8,6 +8,7 @@
 #include "plugin.hpp"
 #include "layout_chimera.hpp"
 #include <osdialog.h>
+#include <cstring>
 #include <fstream>
 
 static const int MAX_GRAINS = 6;
@@ -56,8 +57,6 @@ struct Chimera : Module {
 		PLAY_LIGHT,
 		SYNC_LIGHT,
 		MODE_LIGHT,
-		CLK_LIGHT,
-		ENUMS(SLICE_LIGHT, 8),
 		SPLICE_LIGHT,
 		LIGHTS_LEN
 	};
@@ -200,15 +199,46 @@ struct Chimera : Module {
 		return sr > 100000.f ? 30.f : 60.f;
 	}
 
+	void resetReelTransport() {
+		recording = false;
+		freshRecording = false;
+		recWrite = 0;
+		curSlice = 0;
+		numSlices = 1;
+		playPos = 0.0;
+		sliceStart = 0.0;
+		sliceEnd = std::max(1, reelLen);
+		sliceDir = 1.f;
+		spawnTimer = 0.0;
+		for (Grain& g : grains)
+			g.active = false;
+		syncBeat = -1;
+		declick = 1.f;
+		envFollow = 0.f;
+	}
+
+	void eraseReel() {
+		reelLen = 0;
+		markers.clear();
+		resetReelTransport();
+		reelRev++;
+	}
+
+	void updateButtonLights(bool spliceLit) {
+		if (!lightDivider.process())
+			return;
+		lights[SPLICE_LIGHT].setBrightness(spliceLit ? 1.f : 0.f);
+		lights[REC_LIGHT].setBrightness(recording ? 1.f : 0.f);
+		lights[PLAY_LIGHT].setBrightness(playing ? 1.f : 0.f);
+		lights[SYNC_LIGHT].setBrightness(sync ? 1.f : 0.f);
+		lights[MODE_LIGHT].setBrightness(stretchMode ? 1.f : 0.f);
+	}
+
 	void allocate(float sr) {
 		bufLen = (int)(sr * maxSeconds(sr));
 		bufL.assign(bufLen, 0.f);
 		bufR.assign(bufLen, 0.f);
-		reelLen = 0;
-		markers.clear();
-		playPos = 0.0;
-		for (Grain& g : grains)
-			g.active = false;
+		eraseReel();
 	}
 
 	// linear-resample the current reel (and markers) to a new sample rate
@@ -263,9 +293,8 @@ struct Chimera : Module {
 					markers.push_back(nm);
 			}
 		}
-		else {
-			synthesizeDemoLoop(e.sampleRate);
-		}
+		// An intentionally empty reel stays empty. The constructor installs
+		// the demo explicitly; sample-rate changes should not resurrect it.
 		lastSr = e.sampleRate;
 		eqLowVal = eqMidVal = eqHighVal = 1e9f;
 		reelRev++;
@@ -273,6 +302,7 @@ struct Chimera : Module {
 
 	// small built-in arpeggio loop so the controls are audible out of the box
 	void synthesizeDemoLoop(float sr) {
+		resetReelTransport();
 		float seconds = 2.f;
 		reelLen = std::min((int)(sr * seconds), bufLen);
 		static const float semis[8] = {0, 7, 12, 16, 19, 16, 12, 7};
@@ -310,7 +340,7 @@ struct Chimera : Module {
 		f.read(tag, 4);
 		if (std::string(tag, 4) != "WAVE")
 			return false;
-		uint16_t fmt = 0, channels = 0, bits = 0;
+		uint16_t fmt = 0, sampleFormat = 0, channels = 0, bits = 0;
 		uint32_t srate = 0;
 		std::vector<char> data;
 		while (f && !f.eof()) {
@@ -320,14 +350,28 @@ struct Chimera : Module {
 				break;
 			std::string t(tag, 4);
 			if (t == "fmt ") {
+				if (size < 16)
+					return false;
 				fmt = rd16();
+				sampleFormat = fmt;
 				channels = rd16();
 				srate = rd32();
 				rd32();
 				rd16();
 				bits = rd16();
-				if (size > 16)
-					f.seekg(size - 16, std::ios::cur);
+				if (size > 16) {
+					std::vector<char> extra(size - 16);
+					f.read(extra.data(), extra.size());
+					// WAVE_FORMAT_EXTENSIBLE stores the real PCM/float format as
+					// the first DWORD of its SubFormat GUID.
+					if (fmt == 0xFFFE && extra.size() >= 24) {
+						uint32_t subFormat = 0;
+						std::memcpy(&subFormat, extra.data() + 8, sizeof(subFormat));
+						sampleFormat = (uint16_t)subFormat;
+					}
+				}
+				if (size & 1)
+					f.seekg(1, std::ios::cur);
 			}
 			else if (t == "data") {
 				data.resize(size);
@@ -340,7 +384,10 @@ struct Chimera : Module {
 		}
 		if (data.empty() || channels == 0 || srate == 0)
 			return false;
-		if (!(fmt == 1 || fmt == 3 || fmt == 0xFFFE))
+		if (!(sampleFormat == 1 || sampleFormat == 3))
+			return false;
+		if ((sampleFormat == 1 && !(bits == 8 || bits == 16 || bits == 24 || bits == 32)) ||
+		    (sampleFormat == 3 && !(bits == 32 || bits == 64)))
 			return false;
 		float engineSr = APP->engine->getSampleRate();
 		int bytesPer = bits / 8;
@@ -350,18 +397,36 @@ struct Chimera : Module {
 		// resample to engine rate on load (linear)
 		double ratio = (double)srate / engineSr;
 		int outFrames = std::min((int)(frames / ratio), bufLen);
+		if (outFrames < 2)
+			return false;
 		auto sampleAt = [&](int i, int c) -> float {
 			const char* p = data.data() + (size_t)(i * channels + std::min<int>(c, channels - 1)) * bytesPer;
-			if (bits == 16)
-				return *(const int16_t*)p / 32768.f;
+			if (bits == 16) {
+				int16_t x = 0;
+				std::memcpy(&x, p, sizeof(x));
+				return x / 32768.f;
+			}
 			if (bits == 24) {
-				int32_t x = (uint8_t)p[0] | ((uint8_t)p[1] << 8) | ((int8_t)p[2] << 16);
+				int32_t x = (uint8_t)p[0] | ((uint8_t)p[1] << 8) | ((uint8_t)p[2] << 16);
+				if (x & 0x800000)
+					x |= ~0xFFFFFF;
 				return x / 8388608.f;
 			}
-			if (bits == 32 && (fmt == 3 || fmt == 0xFFFE))
-				return *(const float*)p;
-			if (bits == 32)
-				return *(const int32_t*)p / 2147483648.f;
+			if (bits == 32 && sampleFormat == 3) {
+				float x = 0.f;
+				std::memcpy(&x, p, sizeof(x));
+				return x;
+			}
+			if (bits == 64 && sampleFormat == 3) {
+				double x = 0.0;
+				std::memcpy(&x, p, sizeof(x));
+				return (float)x;
+			}
+			if (bits == 32) {
+				int32_t x = 0;
+				std::memcpy(&x, p, sizeof(x));
+				return x / 2147483648.f;
+			}
 			if (bits == 8)
 				return ((const uint8_t*)p)[0] / 128.f - 1.f;
 			return 0.f;
@@ -375,7 +440,7 @@ struct Chimera : Module {
 		}
 		reelLen = outFrames;
 		markers.clear();
-		playPos = 0.0;
+		resetReelTransport();
 		reelRev++;
 		return true;
 	}
@@ -389,6 +454,7 @@ struct Chimera : Module {
 			numSlices = 1 << (int)(chop * 5.f + 0.5f);
 		}
 		numSlices = std::max(1, numSlices);
+		curSlice = clamp(curSlice, 0, numSlices - 1);
 	}
 
 	void sliceBounds(int idx, double& start, double& end) {
@@ -399,6 +465,7 @@ struct Chimera : Module {
 			end = (idx == n - 1) ? (double)reelLen : (double)markers[idx];
 		}
 		else {
+			idx = clamp(idx, 0, numSlices - 1);
 			double len = (double)reelLen / numSlices;
 			start = idx * len;
 			end = start + len;
@@ -428,7 +495,9 @@ struct Chimera : Module {
 			}
 			else if (!recording && freshRecording) {
 				freshRecording = false;
-				reelLen = std::max(recWrite, (int)(0.05f * sr));
+				// Keep only samples that were actually written. Padding a very
+				// short take used to expose stale audio from the previous reel.
+				reelLen = recWrite >= 2 ? recWrite : 0;
 				markers.clear();
 				playPos = 0.0;
 				reelRev++;
@@ -470,6 +539,7 @@ struct Chimera : Module {
 			lastEdge = 0.f;
 			clockTick = true;
 		}
+		bool spliceLit = splicePulse.process(dt);
 
 		// ---- fresh recording (defines the reel) ----
 		float inL = inputs[IN_L_INPUT].getVoltage() / 5.f;
@@ -492,13 +562,19 @@ struct Chimera : Module {
 			outputs[OUT_R_OUTPUT].setVoltage(inR * 5.f);
 			outputs[ENV_OUTPUT].setVoltage(0.f);
 			outputs[EOS_OUTPUT].setVoltage(0.f);
-			lights[REC_LIGHT].setBrightness(1.f);
+			eosPulse.process(dt);
+			updateButtonLights(spliceLit);
 			return;
 		}
 
 		if (reelLen <= 0) {
 			outputs[OUT_L_OUTPUT].setVoltage(0.f);
 			outputs[OUT_R_OUTPUT].setVoltage(0.f);
+			outputs[ENV_OUTPUT].setVoltage(0.f);
+			outputs[EOS_OUTPUT].setVoltage(0.f);
+			envFollow = 0.f;
+			eosPulse.process(dt);
+			updateButtonLights(spliceLit);
 			return;
 		}
 
@@ -755,23 +831,8 @@ struct Chimera : Module {
 		envFollow = std::max(level, envFollow * std::exp(-dt / 0.12f));
 		outputs[ENV_OUTPUT].setVoltage(clamp(envFollow * 8.f, 0.f, 10.f));
 
-		// ---- lights ----
-		bool spliceLit = splicePulse.process(dt);
-		if (lightDivider.process()) {
-			lights[SPLICE_LIGHT].setBrightness(spliceLit ? 1.f : 0.f);
-			lights[REC_LIGHT].setBrightness(recording ? 1.f : 0.f);
-			lights[PLAY_LIGHT].setBrightness(playing ? 1.f : 0.f);
-			lights[SYNC_LIGHT].setBrightness(sync ? 1.f : 0.f);
-			lights[MODE_LIGHT].setBrightness(stretchMode ? 1.f : 0.f);
-			lights[CLK_LIGHT].setBrightness((clockSeen && lastEdge < 0.06f) ? 1.f : 0.f);
-			for (int i = 0; i < 8; i++) {
-				int mapped = (numSlices <= 8) ? i : i * numSlices / 8;
-				bool exists = (numSlices <= 8) ? (i < numSlices) : true;
-				bool isCur = (numSlices <= 8) ? (i == curSlice) : (curSlice * 8 / numSlices == i);
-				lights[SLICE_LIGHT + i].setBrightness(!exists ? 0.f : isCur ? 1.f : 0.12f);
-				static_cast<void>(mapped);
-			}
-		}
+		// ---- illuminated transport buttons ----
+		updateButtonLights(spliceLit);
 	}
 
 	json_t* dataToJson() override {
@@ -808,25 +869,33 @@ struct Chimera : Module {
 		if ((j = json_object_get(root, "playing"))) playing = json_boolean_value(j);
 		if ((j = json_object_get(root, "sync"))) sync = json_boolean_value(j);
 		if ((j = json_object_get(root, "stretchMode"))) stretchMode = json_boolean_value(j);
+		int expectedLen = 1; // old patches always have storage when a reel exists
+		if ((j = json_object_get(root, "reelLen")))
+			expectedLen = (int)json_integer_value(j);
+		reelLen = 0;
+		resetReelTransport();
 		markers.clear();
 		json_t* mk = json_object_get(root, "markers");
 		if (mk)
 			for (size_t i = 0; i < json_array_size(mk); i++)
 				markers.push_back((int)json_integer_value(json_array_get(mk, i)));
-		try {
-			std::string dir = getPatchStorageDirectory();
-			std::ifstream f(dir + "/reel.bin", std::ios::binary);
-			if (f) {
-				int32_t n = 0;
-				f.read((char*)&n, 4);
-				if (n > 0 && n <= bufLen) {
-					f.read((char*)bufL.data(), (size_t)n * 4);
-					f.read((char*)bufR.data(), (size_t)n * 4);
-					reelLen = n;
+		if (expectedLen > 0) {
+			try {
+				std::string dir = getPatchStorageDirectory();
+				std::ifstream f(dir + "/reel.bin", std::ios::binary);
+				if (f) {
+					int32_t n = 0;
+					f.read((char*)&n, 4);
+					if (n > 0 && n <= bufLen) {
+						f.read((char*)bufL.data(), (size_t)n * 4);
+						f.read((char*)bufR.data(), (size_t)n * 4);
+						if (f)
+							reelLen = n;
+					}
 				}
 			}
-		}
-		catch (Exception& e) {
+			catch (Exception& e) {
+			}
 		}
 		// drop markers that fall outside the reel
 		markers.erase(std::remove_if(markers.begin(), markers.end(),
@@ -840,6 +909,8 @@ struct Chimera : Module {
 		float esr = APP->engine->getSampleRate();
 		if (reelLen > 1 && savedSr > 0.f && std::fabs(savedSr - esr) > 0.5f)
 			resampleReel(savedSr, esr);
+		updateSlices();
+		sliceBounds(curSlice, sliceStart, sliceEnd);
 		reelRev++;
 	}
 };
@@ -934,8 +1005,8 @@ struct ChimeraDisplay : LedDisplay {
 		}
 
 		// waveform
-		float mid = h * 0.56f;
-		float amp = h * 0.40f;
+		float mid = h * 0.54f;
+		float amp = h * 0.31f;
 		nvgBeginPath(args.vg);
 		for (int c = 0; c < NCOL; c++) {
 			float x = (c + 0.5f) * w / NCOL;
@@ -1006,6 +1077,25 @@ struct ChimeraDisplay : LedDisplay {
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, w - 6.f, 6.f, 2.2f);
 			nvgFillColor(args.vg, nvgRGBA(0xd9, 0xa4, 0x41, (unsigned char)(0x28 + a * 0xd0)));
+			nvgFill(args.vg);
+		}
+
+		// Eight-position slice navigator. For reels with more than eight
+		// slices each dot represents a bank, so the current region remains
+		// legible without crowding the waveform.
+		float navY = h - 3.2f;
+		float navStep = std::min(10.f, (w - 18.f) / 8.f);
+		float navX0 = w * 0.5f - navStep * 3.5f;
+		for (int i = 0; i < 8; i++) {
+			bool exists = module->numSlices <= 8 ? i < module->numSlices : true;
+			bool active = module->numSlices <= 8
+				? i == module->curSlice
+				: i == clamp(module->curSlice * 8 / module->numSlices, 0, 7);
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, navX0 + i * navStep, navY, active ? 1.75f : 1.35f);
+			nvgFillColor(args.vg, !exists ? nvgRGBA(0x8b, 0x8f, 0x99, 0x28)
+				: active ? nvgRGB(0x7f, 0xd4, 0xe8)
+				: nvgRGBA(0x8b, 0x8f, 0x99, 0x88));
 			nvgFill(args.vg);
 		}
 
@@ -1098,12 +1188,11 @@ struct ChimeraWidget : ModuleWidget {
 		}));
 		menu->addChild(createMenuItem("Clear splice markers", "", [=]() {
 			module->markers.clear();
+			module->updateSlices();
+			module->enterSlice(module->curSlice, false);
 		}));
 		menu->addChild(createMenuItem("Erase reel", "", [=]() {
-			module->reelLen = 0;
-			module->markers.clear();
-			module->playPos = 0.0;
-			module->reelRev++;
+			module->eraseReel();
 		}));
 	}
 };

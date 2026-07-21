@@ -8,8 +8,10 @@
 #include "plugin.hpp"
 #include "layout_chimera.hpp"
 #include <osdialog.h>
+#include <atomic>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 
 static const int MAX_GRAINS = 6;
 
@@ -124,6 +126,14 @@ struct Chimera : Module {
 	std::vector<float> bufL, bufR;
 	int bufLen = 0;     // allocated
 	int reelLen = 0;    // recorded/loaded length
+	// WAV decoding runs from the context-menu/UI thread. It must never rewrite
+	// the live reel or transport while the engine is reading them. A completed
+	// decode is handed off here and installed by the audio thread at a sample
+	// boundary.
+	std::mutex pendingReelMutex;
+	std::vector<float> pendingReelL, pendingReelR;
+	int pendingReelLen = 0;
+	std::atomic<bool> pendingReelReady{false};
 	std::vector<int> markers;
 	int reelRev = 0;    // bumped whenever the reel audio changes (display cache key)
 	float lastSr = 44100.f;
@@ -222,6 +232,50 @@ struct Chimera : Module {
 		markers.clear();
 		resetReelTransport();
 		reelRev++;
+	}
+
+	void queueReel(std::vector<float>&& left, std::vector<float>&& right, int validLen) {
+		if (validLen < 2 || left.size() < (size_t)validLen || left.size() != right.size())
+			return;
+		std::lock_guard<std::mutex> lock(pendingReelMutex);
+		pendingReelL = std::move(left);
+		pendingReelR = std::move(right);
+		pendingReelLen = validLen;
+		pendingReelReady.store(true, std::memory_order_release);
+	}
+
+	void applyPendingReel() {
+		if (!pendingReelReady.load(std::memory_order_acquire))
+			return;
+		if (!pendingReelMutex.try_lock())
+			return; // decoding/UI handoff never blocks the audio thread
+		if (pendingReelReady.load(std::memory_order_relaxed)) {
+			int n = std::min({pendingReelLen, (int)pendingReelL.size(),
+				(int)pendingReelR.size(), bufLen});
+			if (n >= 2) {
+				// The normal path is an O(1) swap, so loading a long sample cannot
+				// stall the audio callback. A simultaneous sample-rate change is the
+				// only case that needs a bounded copy into the new-sized buffers.
+				if ((int)pendingReelL.size() == bufLen) {
+					bufL.swap(pendingReelL);
+					bufR.swap(pendingReelR);
+				}
+				else {
+					std::copy_n(pendingReelL.begin(), n, bufL.begin());
+					std::copy_n(pendingReelR.begin(), n, bufR.begin());
+				}
+				reelLen = n;
+				markers.clear();
+				resetReelTransport();
+				declick = 0.f;
+				reelRev++;
+			}
+			pendingReelL.clear();
+			pendingReelR.clear();
+			pendingReelLen = 0;
+			pendingReelReady.store(false, std::memory_order_release);
+		}
+		pendingReelMutex.unlock();
 	}
 
 	void updateButtonLights(bool spliceLit) {
@@ -404,6 +458,7 @@ struct Chimera : Module {
 		    (sampleFormat == 3 && !(bits == 32 || bits == 64)))
 			return false;
 		float engineSr = APP->engine->getSampleRate();
+		int outputCapacity = (int)(engineSr * maxSeconds(engineSr));
 		int bytesPer = bits / 8;
 		uint64_t frameBytes = (uint64_t)bytesPer * channels;
 		int frames = (int)std::min<uint64_t>(dataSize / frameBytes, 0x7fffffff);
@@ -411,7 +466,7 @@ struct Chimera : Module {
 			return false;
 		// resample to engine rate on load (linear)
 		double ratio = (double)srate / engineSr;
-		int outFrames = (int)std::min((double)frames / ratio, (double)bufLen);
+		int outFrames = (int)std::min((double)frames / ratio, (double)outputCapacity);
 		if (outFrames < 2)
 			return false;
 		int framesNeeded = std::min(frames,
@@ -461,17 +516,15 @@ struct Chimera : Module {
 				value = ((const uint8_t*)p)[0] / 128.f - 1.f;
 			return std::isfinite(value) ? clamp(value, -8.f, 8.f) : 0.f;
 		};
+		std::vector<float> newL(outputCapacity, 0.f), newR(outputCapacity, 0.f);
 		for (int i = 0; i < outFrames; i++) {
 			double sp = i * ratio;
 			int i0 = std::min((int)sp, frames - 2);
 			float fr = (float)(sp - i0);
-			bufL[i] = sampleAt(i0, 0) + (sampleAt(i0 + 1, 0) - sampleAt(i0, 0)) * fr;
-			bufR[i] = sampleAt(i0, 1) + (sampleAt(i0 + 1, 1) - sampleAt(i0, 1)) * fr;
+			newL[i] = sampleAt(i0, 0) + (sampleAt(i0 + 1, 0) - sampleAt(i0, 0)) * fr;
+			newR[i] = sampleAt(i0, 1) + (sampleAt(i0 + 1, 1) - sampleAt(i0, 1)) * fr;
 		}
-		reelLen = outFrames;
-		markers.clear();
-		resetReelTransport();
-		reelRev++;
+		queueReel(std::move(newL), std::move(newR), outFrames);
 		return true;
 	}
 
@@ -512,6 +565,7 @@ struct Chimera : Module {
 	void process(const ProcessArgs& args) override {
 		float sr = args.sampleRate;
 		float dt = args.sampleTime;
+		applyPendingReel();
 		if (bufLen == 0)
 			return;
 

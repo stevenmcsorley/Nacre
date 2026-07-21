@@ -249,6 +249,10 @@ struct Chimera : Module {
 		std::vector<float> oR(bufR.begin(), bufR.begin() + reelLen);
 		double ratio = (double)fromSr / toSr;
 		int nLen = std::min((int)(reelLen / ratio), bufLen);
+		if (nLen < 2) {
+			eraseReel();
+			return;
+		}
 		for (int i = 0; i < nLen; i++) {
 			double sp = i * ratio;
 			int i0 = std::min((int)sp, reelLen - 2);
@@ -278,19 +282,21 @@ struct Chimera : Module {
 		if (oLen > 1 && oldSr > 0.f) {
 			double ratio = (double)oldSr / e.sampleRate;
 			int nLen = std::min((int)(oLen / ratio), bufLen);
-			for (int i = 0; i < nLen; i++) {
-				double sp = i * ratio;
-				int i0 = std::min((int)sp, oLen - 2);
-				float fr = (float)(sp - i0);
-				bufL[i] = oL[i0] + (oL[i0 + 1] - oL[i0]) * fr;
-				bufR[i] = oR[i0] + (oR[i0 + 1] - oR[i0]) * fr;
-			}
-			reelLen = nLen;
-			markers.clear();
-			for (int m : oM) {
-				int nm = clamp((int)(m / ratio), 1, std::max(1, reelLen - 1));
-				if (markers.empty() || markers.back() != nm)
-					markers.push_back(nm);
+			if (nLen >= 2) {
+				for (int i = 0; i < nLen; i++) {
+					double sp = i * ratio;
+					int i0 = std::min((int)sp, oLen - 2);
+					float fr = (float)(sp - i0);
+					bufL[i] = oL[i0] + (oL[i0 + 1] - oL[i0]) * fr;
+					bufR[i] = oR[i0] + (oR[i0 + 1] - oR[i0]) * fr;
+				}
+				reelLen = nLen;
+				markers.clear();
+				for (int m : oM) {
+					int nm = clamp((int)(m / ratio), 1, reelLen - 1);
+					if (markers.empty() || markers.back() != nm)
+						markers.push_back(nm);
+				}
 			}
 		}
 		// An intentionally empty reel stays empty. The constructor installs
@@ -342,7 +348,8 @@ struct Chimera : Module {
 			return false;
 		uint16_t fmt = 0, sampleFormat = 0, channels = 0, bits = 0;
 		uint32_t srate = 0;
-		std::vector<char> data;
+		std::streampos dataPos = std::streampos(-1);
+		uint32_t dataSize = 0;
 		while (f && !f.eof()) {
 			f.read(tag, 4);
 			uint32_t size = rd32();
@@ -360,29 +367,36 @@ struct Chimera : Module {
 				rd16();
 				bits = rd16();
 				if (size > 16) {
-					std::vector<char> extra(size - 16);
-					f.read(extra.data(), extra.size());
+					uint32_t extraSize = size - 16;
+					char extra[24] = {};
+					uint32_t take = std::min<uint32_t>(extraSize, sizeof(extra));
+					f.read(extra, take);
 					// WAVE_FORMAT_EXTENSIBLE stores the real PCM/float format as
 					// the first DWORD of its SubFormat GUID.
-					if (fmt == 0xFFFE && extra.size() >= 24) {
+					if (fmt == 0xFFFE && take >= 24) {
 						uint32_t subFormat = 0;
-						std::memcpy(&subFormat, extra.data() + 8, sizeof(subFormat));
+						std::memcpy(&subFormat, extra + 8, sizeof(subFormat));
 						sampleFormat = (uint16_t)subFormat;
 					}
+					if (extraSize > take)
+						f.seekg((std::streamoff)(extraSize - take), std::ios::cur);
 				}
 				if (size & 1)
 					f.seekg(1, std::ios::cur);
 			}
 			else if (t == "data") {
-				data.resize(size);
-				f.read(data.data(), size);
-				break;
+				// Remember the chunk and keep scanning. Although fmt normally
+				// precedes data, legal RIFF files do not require that ordering.
+				dataPos = f.tellg();
+				dataSize = size;
+				f.seekg((std::streamoff)size + (size & 1u), std::ios::cur);
 			}
 			else {
-				f.seekg(size + (size & 1), std::ios::cur);
+				f.seekg((std::streamoff)size + (size & 1u), std::ios::cur);
 			}
 		}
-		if (data.empty() || channels == 0 || srate == 0)
+		if (dataPos == std::streampos(-1) || dataSize == 0 || channels == 0 || channels > 8 ||
+		    srate < 1000 || srate > 768000)
 			return false;
 		if (!(sampleFormat == 1 || sampleFormat == 3))
 			return false;
@@ -391,45 +405,61 @@ struct Chimera : Module {
 			return false;
 		float engineSr = APP->engine->getSampleRate();
 		int bytesPer = bits / 8;
-		int frames = (int)(data.size() / (bytesPer * channels));
+		uint64_t frameBytes = (uint64_t)bytesPer * channels;
+		int frames = (int)std::min<uint64_t>(dataSize / frameBytes, 0x7fffffff);
 		if (frames < 2)
 			return false;
 		// resample to engine rate on load (linear)
 		double ratio = (double)srate / engineSr;
-		int outFrames = std::min((int)(frames / ratio), bufLen);
+		int outFrames = (int)std::min((double)frames / ratio, (double)bufLen);
 		if (outFrames < 2)
+			return false;
+		int framesNeeded = std::min(frames,
+			(int)std::ceil((outFrames - 1) * ratio) + 2);
+		size_t bytesNeeded = (size_t)framesNeeded * (size_t)frameBytes;
+		// A corrupt header must not make Rack reserve gigabytes. Eight-channel
+		// 60-second files at normal production rates remain comfortably below it.
+		static const size_t MAX_WAV_BYTES = (size_t)512 * 1024 * 1024;
+		if (bytesNeeded > MAX_WAV_BYTES)
+			return false;
+		std::vector<char> data(bytesNeeded);
+		f.clear();
+		f.seekg(dataPos);
+		f.read(data.data(), (std::streamsize)bytesNeeded);
+		if (!f)
 			return false;
 		auto sampleAt = [&](int i, int c) -> float {
 			const char* p = data.data() + (size_t)(i * channels + std::min<int>(c, channels - 1)) * bytesPer;
+			float value = 0.f;
 			if (bits == 16) {
 				int16_t x = 0;
 				std::memcpy(&x, p, sizeof(x));
-				return x / 32768.f;
+				value = x / 32768.f;
 			}
-			if (bits == 24) {
+			else if (bits == 24) {
 				int32_t x = (uint8_t)p[0] | ((uint8_t)p[1] << 8) | ((uint8_t)p[2] << 16);
 				if (x & 0x800000)
 					x |= ~0xFFFFFF;
-				return x / 8388608.f;
+				value = x / 8388608.f;
 			}
-			if (bits == 32 && sampleFormat == 3) {
+			else if (bits == 32 && sampleFormat == 3) {
 				float x = 0.f;
 				std::memcpy(&x, p, sizeof(x));
-				return x;
+				value = x;
 			}
-			if (bits == 64 && sampleFormat == 3) {
+			else if (bits == 64 && sampleFormat == 3) {
 				double x = 0.0;
 				std::memcpy(&x, p, sizeof(x));
-				return (float)x;
+				value = (float)x;
 			}
-			if (bits == 32) {
+			else if (bits == 32) {
 				int32_t x = 0;
 				std::memcpy(&x, p, sizeof(x));
-				return x / 2147483648.f;
+				value = x / 2147483648.f;
 			}
-			if (bits == 8)
-				return ((const uint8_t*)p)[0] / 128.f - 1.f;
-			return 0.f;
+			else if (bits == 8)
+				value = ((const uint8_t*)p)[0] / 128.f - 1.f;
+			return std::isfinite(value) ? clamp(value, -8.f, 8.f) : 0.f;
 		};
 		for (int i = 0; i < outFrames; i++) {
 			double sp = i * ratio;
@@ -513,7 +543,7 @@ struct Chimera : Module {
 			stretchMode = !stretchMode;
 		if ((spliceBtn.process(params[SPLICE_PARAM].getValue() > 0.f) ||
 		     spliceTrig.process(inputs[SPLICE_INPUT].getVoltage(), 0.1f, 1.f)) &&
-		    reelLen > 0) {
+		    reelLen > 2) {
 			int m = clamp((int)playPos, 1, reelLen - 2);
 			// with sync running, splices snap to the clock grid so every slice
 			// is an exact number of beats — this is what keeps the loop tight
@@ -544,6 +574,8 @@ struct Chimera : Module {
 		// ---- fresh recording (defines the reel) ----
 		float inL = inputs[IN_L_INPUT].getVoltage() / 5.f;
 		float inR = inputs[IN_R_INPUT].isConnected() ? inputs[IN_R_INPUT].getVoltage() / 5.f : inL;
+		if (!std::isfinite(inL)) inL = 0.f;
+		if (!std::isfinite(inR)) inR = 0.f;
 		if (recording && freshRecording) {
 			if (recWrite < bufLen) {
 				bufL[recWrite] = inL;
@@ -886,11 +918,16 @@ struct Chimera : Module {
 				if (f) {
 					int32_t n = 0;
 					f.read((char*)&n, 4);
-					if (n > 0 && n <= bufLen) {
+					if (n >= 2 && n <= bufLen) {
 						f.read((char*)bufL.data(), (size_t)n * 4);
 						f.read((char*)bufR.data(), (size_t)n * 4);
-						if (f)
+						if (f) {
 							reelLen = n;
+							for (int i = 0; i < reelLen; i++) {
+								bufL[i] = std::isfinite(bufL[i]) ? clamp(bufL[i], -8.f, 8.f) : 0.f;
+								bufR[i] = std::isfinite(bufR[i]) ? clamp(bufR[i], -8.f, 8.f) : 0.f;
+							}
+						}
 					}
 				}
 			}
@@ -901,6 +938,7 @@ struct Chimera : Module {
 		markers.erase(std::remove_if(markers.begin(), markers.end(),
 			[&](int m) { return m <= 0 || m >= reelLen; }), markers.end());
 		std::sort(markers.begin(), markers.end());
+		markers.erase(std::unique(markers.begin(), markers.end()), markers.end());
 		playPos = 0.0;
 		// a reel saved at a different sample rate would play at the wrong pitch
 		float savedSr = 0.f;
